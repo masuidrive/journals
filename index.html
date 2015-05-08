@@ -29,18 +29,33 @@
     .other-editing {
       color: #888;
     }
+
+    .sort-handle {
+      cursor: pointer;
+      margin-right: 8px;
+    }
   </style>
   <script type="text/javascript" src="config.js"></script>
   <script type="text/jsx">//<![CDATA[
 var EditableSectionList = React.createClass({
-  mixins: [ReactFireMixin, SortableMixin],
-  sortableOptions: { handle: ".sort-handle" },
+  mixins: [SortableMixin],
+  sortableOptions: {
+    handle: ".sort-handle",
+    draggable: ".section"
+  },
 
   getInitialState: function(){
     return({
       editText: "",
       editing: null
     });
+  },
+
+  handleSort: function (evt) {
+    var el = this.props.sections[evt.oldIndex];
+    var el2 = this.props.sections[evt.newIndex + 1];
+    var priority = ((el2 ? el2.val().priority : 1) + this.props.sections[evt.newIndex].val().priority) / 2;
+    this.props.onChangePriority(el.key(), priority);
   },
 
   componentWillMount: function() {
@@ -60,10 +75,7 @@ var EditableSectionList = React.createClass({
         var path = _.map(["editing", this.props.user], function(str) {
           return encodeURIComponent(str);
         }).join('/');
-      //  var data = this.firebaseRefs["data"].child(el.key());
-    //    data.set(true);
-    //    data.onDisconnect().remove();
-
+        this.props.onLockSection(el.key());
         this.setState({
           editText: el.val().text,
           editing: el.key()
@@ -73,11 +85,7 @@ var EditableSectionList = React.createClass({
   },
 
   handleCancelEditing: function() {
-    var path = _.map([this.state.editing, "editing", this.props.user], function(s) {
-      return encodeURIComponent(s);
-    }).join('/');
-    this.firebaseRefs["data"].child(path).remove();
-
+    this.props.onUnlockSection(this.state.editing);
     this.setState({editing: null});
   },
 
@@ -93,7 +101,7 @@ var EditableSectionList = React.createClass({
         {this.props.sections.map(function(el){
           if(this.state.editing == el.key()) {
             return(
-              <div className="col-sm-8 section">
+              <div className="col-sm-8 section" key={el.key()+"-editing"}>
                 <textarea value={this.state.editText}
                   onChange={this.handleUpdateEditText} className="form-control"/>
                 <button onClick={this.handleUpdate}
@@ -112,7 +120,8 @@ var EditableSectionList = React.createClass({
             if(!_.isEmpty(el.val().editing)) {
               classNames += " other-editing";
             }
-            return <div onClick={this.handleEditItem(el)} className={classNames}>
+            return <div onClick={this.handleEditItem(el)} className={classNames} key={el.key()+"-display"}>
+              <span className="sort-handle">::</span>
               {el.val().text}
             </div>;
           }
@@ -127,7 +136,6 @@ var JournalForm = React.createClass({
   mixins: [ReactFireMixin],
 
   getInitialState: function(){
-    console.log(this.props);
     return({
       sections:[],
       editing: null
@@ -174,7 +182,11 @@ var JournalForm = React.createClass({
   },
 
   handlePost: function(e) {
-    this.firebaseRefs["data"].push({text: this.state.newText});
+    var max_prio = _.max(this.state.sections, 'priority');
+    if(_.isEmpty(this.state.sections)) {
+      max_prio = 0;
+    }
+    this.firebaseRefs["data"].push({text: this.state.newText, priority: (max_prio + 1.0) / 2.0});
     this.setState({
       newText: ""
     });
@@ -194,6 +206,29 @@ var JournalForm = React.createClass({
     });
   },
 
+  handleChangePriority: function(key, priority) {
+    var path = _.map([key, "priority"], function(s) {
+      return encodeURIComponent(s);
+    }).join('/');
+    this.firebaseRefs["data"].child(path).set(priority);
+  },
+
+  handleLockSection: function(key) {
+    var path = _.map([key, "editing", this.props.user], function(s) {
+      return encodeURIComponent(s);
+    }).join('/');
+    var data = this.firebaseRefs["data"].child(path);
+    data.set(true);
+    data.onDisconnect().remove();
+  },
+
+  handleUnlockSection: function(key) {
+    var path = _.map([key, "editing", this.props.user], function(s) {
+      return encodeURIComponent(s);
+    }).join('/');
+    this.firebaseRefs["data"].child(path).remove();
+  },
+
   render: function() {
     var editForm = null;
 
@@ -211,8 +246,11 @@ var JournalForm = React.createClass({
         <EditableSectionList
           url={this.props.url}
           user={this.props.user}
-          sections={this.state.sections}
+          sections={_.sortBy(this.state.sections, function(section) { return section.val().priority })}
           onChange={this.handleChangeSection}
+          onLockSection={this.handleLockSection}
+          onUnlockSection={this.handleUnlockSection}
+          onChangePriority={this.handleChangePriority}
         />
         {editForm}
       </div>
