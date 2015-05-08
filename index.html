@@ -14,6 +14,7 @@
   <style type='text/css'>
     html,body {
       background-color: #EDF3F2;
+      margin-top: 32px;
     }
 
     .new-text {
@@ -53,8 +54,9 @@ var EditableSectionList = React.createClass({
 
   handleSort: function (evt) {
     var el = this.props.sections[evt.oldIndex];
-    var el2 = this.props.sections[evt.newIndex + 1];
-    var priority = ((el2 ? el2.val().priority : 1) + this.props.sections[evt.newIndex].val().priority) / 2;
+    var el2 = this.props.sections[evt.newIndex - 1];
+    var el3 = this.props.sections[evt.newIndex];
+    var priority = ((el2 ? el2.val().priority : 0) + (el3 ? el3.val().priority : 0)) / 2;
     this.props.onChangePriority(el.key(), priority);
   },
 
@@ -182,7 +184,8 @@ var JournalForm = React.createClass({
   },
 
   handlePost: function(e) {
-    var max_prio = _.max(this.state.sections, 'priority');
+    var max_prio = _.max(_.map(this.state.sections, function(section) { return section.val().priority }));
+console.log(max_prio);
     if(_.isEmpty(this.state.sections)) {
       max_prio = 0;
     }
@@ -200,7 +203,7 @@ var JournalForm = React.createClass({
           data.remove();
         }
         else {
-          data.update({text: text});
+          data.child('text').set(text);
         }
       }
     });
