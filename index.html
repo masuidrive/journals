@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+  <title>Journals</title>
+  <script type='text/javascript' src="https://cdnjs.cloudflare.com/ajax/libs/react/0.13.1/JSXTransformer.js"></script>
+  <script type='text/javascript' src="https://cdnjs.cloudflare.com/ajax/libs/react/0.13.1/react-with-addons.js"></script>
+  <script type='text/javascript' src="https://cdn.firebase.com/js/client/2.2.1/firebase.js"></script>
+  <script type='text/javascript' src="https://cdn.firebase.com/libs/reactfire/0.4.0/reactfire.min.js"></script>
+  <script type='text/javascript' src="https://rawgit.com/RubaXa/Sortable/react/Sortable.js"></script>
+  <script type='text/javascript' src="https://rawgit.com/RubaXa/Sortable/react/react-sortable-mixin.js"></script>
+  <script type='text/javascript' src="https://cdnjs.cloudflare.com/ajax/libs/lodash-compat/3.8.0/lodash.min.js"></script>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css">
+  <style type='text/css'>
+    html,body {
+      background-color: #EDF3F2;
+    }
+
+    .new-text {
+      margin-top: 16px;
+    }
+
+    .section {
+      background-color: white;
+      border-bottom: 1px solid #EDF3F2;
+      padding: 8px;
+    }
+
+    .other-editing {
+      color: #888;
+    }
+  </style>
+  <script type="text/javascript" src="config.js"></script>
+  <script type="text/jsx">//<![CDATA[
+var EditableSectionList = React.createClass({
+  mixins: [ReactFireMixin, SortableMixin],
+  sortableOptions: { handle: ".sort-handle" },
+
+  getInitialState: function(){
+    return({
+      editText: "",
+      editing: null
+    });
+  },
+
+  componentWillMount: function() {
+  },
+
+  handleUpdate: function(e) {
+    this.props.onChange(this.state.editing, this.state.editText);
+    this.setState({
+      editText: "",
+      editing: null
+    });
+  },
+
+  handleEditItem: function(el) {
+    return function(e) {
+      if(_.isEmpty(el.val().editing)) {
+        var path = _.map(["editing", this.props.user], function(str) {
+          return encodeURIComponent(str);
+        }).join('/');
+      //  var data = this.firebaseRefs["data"].child(el.key());
+    //    data.set(true);
+    //    data.onDisconnect().remove();
+
+        this.setState({
+          editText: el.val().text,
+          editing: el.key()
+        });
+      }
+    }.bind(this);
+  },
+
+  handleCancelEditing: function() {
+    var path = _.map([this.state.editing, "editing", this.props.user], function(s) {
+      return encodeURIComponent(s);
+    }).join('/');
+    this.firebaseRefs["data"].child(path).remove();
+
+    this.setState({editing: null});
+  },
+
+  handleUpdateEditText: function(e) {
+    this.setState({
+      editText: e.target.value
+    });
+  },
+
+  render: function() {
+    return(
+      <div className="row">
+        {this.props.sections.map(function(el){
+          if(this.state.editing == el.key()) {
+            return(
+              <div className="col-sm-8 section">
+                <textarea value={this.state.editText}
+                  onChange={this.handleUpdateEditText} className="form-control"/>
+                <button onClick={this.handleUpdate}
+                  className="btn btn-primary">
+                  Update
+                </button>
+                <button onClick={this.handleCancelEditing}
+                  className="btn btn-default">
+                  Cancel
+                </button>
+              </div>
+            );
+          }
+          else {
+            classNames = "col-sm-8 section";
+            if(!_.isEmpty(el.val().editing)) {
+              classNames += " other-editing";
+            }
+            return <div onClick={this.handleEditItem(el)} className={classNames}>
+              {el.val().text}
+            </div>;
+          }
+        }.bind(this))}
+      </div>
+    );
+  }
+});
+
+
+var JournalForm = React.createClass({
+  mixins: [ReactFireMixin],
+
+  getInitialState: function(){
+    console.log(this.props);
+    return({
+      sections:[],
+      editing: null
+    });
+  },
+
+  componentWillMount: function() {
+    this.bindAsArray(new Firebase(this.props.url), "data");
+    this.firebaseRefs["data"].on(
+      "child_added", this.handleChildAdded.bind(this));
+    this.firebaseRefs["data"].on(
+      "child_removed", this.handleChildRemoved.bind(this));
+    this.firebaseRefs["data"].on(
+      "child_changed", this.handleChildChanged.bind(this));
+  },
+
+  handleChildAdded: function(snapshot) {
+    this.setState({
+      sections: this.state.sections.concat([snapshot])
+    });
+  },
+
+  handleChildRemoved: function(oldSnapshot) {
+    this.setState({
+      sections: this.state.sections.filter(function(item) {
+        return item.key() != oldSnapshot.key()
+      })
+    });
+  },
+
+  handleChildChanged: function(snapshot, prevName) {
+    var data = snapshot;
+    this.setState({
+      sections: this.state.sections.map(function(item) {
+        return item.key() == data.key() ? data : item;
+      })
+    });
+  },
+
+  handleUpdateText: function(e) {
+    this.setState({
+      newText: e.target.value
+    });
+  },
+
+  handlePost: function(e) {
+    this.firebaseRefs["data"].push({text: this.state.newText});
+    this.setState({
+      newText: ""
+    });
+  },
+
+  handleChangeSection: function(key, text) {
+    this.state.sections.forEach(function(section) {
+      if(section.key() == key) {
+        var data = this.firebaseRefs["data"].child(key);
+        if(text == '') {
+          data.remove();
+        }
+        else {
+          data.update({text: text});
+        }
+      }
+    });
+  },
+
+  render: function() {
+    var editForm = null;
+
+    if(this.state.editing == null) {
+      editForm = <div className="row new-text">
+        <div className="col-sm-8">
+          <textarea value={this.state.newText} onChange={this.handleUpdateText} className="form-control"/>
+          <button onClick={this.handlePost} className="btn btn-primary">Post</button>
+        </div>
+      </div>;
+    }
+
+    return(
+      <div className="container">
+        <EditableSectionList
+          url={this.props.url}
+          user={this.props.user}
+          sections={this.state.sections}
+          onChange={this.handleChangeSection}
+        />
+        {editForm}
+      </div>
+    );
+  }
+});
+React.render(<JournalForm url={window.firebase_config.url} user="USER" />,
+  document.getElementById('app'));
+//]]>
+</script>
+</head>
+<body>
+<div id="app"></div>
+</body>
+</html>
